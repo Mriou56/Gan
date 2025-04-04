@@ -6,6 +6,7 @@ import os
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 # Vérification du support de MPS
 device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu")
@@ -82,14 +83,13 @@ def build_and_train_models():
     optimizer_D = RMSprop(discriminator.parameters(), lr=lr)
     adversarial_loss = nn.BCELoss()
 
-    for step in range(train_steps):
-        print(step)
+    for step in tqdm(range(train_steps), desc="Training Progress"):
         for real_imgs, _ in train_loader:
             batch_size = real_imgs.size(0)
             real_imgs = real_imgs.to(device)
 
-            valid = torch.ones((batch_size, 1), device=device, requires_grad=False)
-            fake = torch.zeros((batch_size, 1), device=device, requires_grad=False)
+            valid = torch.full((batch_size, 1), 0.9, device=device, requires_grad=False)
+            fake = torch.full((batch_size, 1), 0.1, device=device, requires_grad=False)
 
             optimizer_G.zero_grad()
             z = torch.randn(batch_size, latent_size).to(device)
@@ -98,12 +98,13 @@ def build_and_train_models():
             g_loss.backward()
             optimizer_G.step()
 
-            optimizer_D.zero_grad()
-            real_loss = adversarial_loss(discriminator(real_imgs), valid)
-            fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
-            d_loss = (real_loss + fake_loss) / 2
-            d_loss.backward()
-            optimizer_D.step()
+            if step % 2 == 0:
+                optimizer_D.zero_grad()
+                real_loss = adversarial_loss(discriminator(real_imgs), valid)
+                fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
+                d_loss = (real_loss + fake_loss) / 2
+                d_loss.backward()
+                optimizer_D.step()
 
         if step % 500 == 0:
             print(f"Step {step}/{train_steps} | D loss: {d_loss.item()} | G loss: {g_loss.item()}")
@@ -130,7 +131,7 @@ def plot_images(generator, step):
 
 
 # Fonction de test
-def test(generator_path):
+def truc(generator_path):
     generator = Generator().to(device)
     generator.load_state_dict(torch.load(generator_path, map_location=device))
     generator.eval()
@@ -141,4 +142,4 @@ def test(generator_path):
 
 if __name__ == '__main__':
     build_and_train_models()
-    test("generator.pth")
+    #test("generator.pth")

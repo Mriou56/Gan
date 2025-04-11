@@ -65,7 +65,7 @@ class Discriminator(nn.Module):
         self.label_embedding = nn.Embedding(num_classes, img_shape[1] * img_shape[2])
 
         self.model = nn.Sequential(
-            nn.Conv2d(2, 64, kernel_size=4, stride=2, padding=1),  # 1 canal image + 1 canal label
+            nn.Conv2d(2, 64, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(0.2),
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(128),
@@ -153,11 +153,11 @@ def build_and_train_models():
 def plot_images(generator, step):
     generator.eval()
 
-    z = torch.randn(9, 100, device=device)
-    labels = torch.arange(0, 9, device=device)
+    z = torch.randn(10, 100, device=device)
+    labels = torch.arange(0, 10, device=device)
     gen_imgs = generator(z, labels).cpu().detach().numpy()
 
-    fig, axs = plt.subplots(3, 3, figsize=(3, 3))
+    fig, axs = plt.subplots(2, 5, figsize=(5, 2))
     fig.subplots_adjust(hspace=0.5)
     for i, ax in enumerate(axs.flatten()):
         img = gen_imgs[i][0]
@@ -181,5 +181,5 @@ def truc(generator_path):
 
 
 if __name__ == '__main__':
-    build_and_train_models()
-    #test("generator.pth")
+    #build_and_train_models()
+    truc("Results/MNIST/generator_CGAN.pth")

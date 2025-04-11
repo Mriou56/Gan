@@ -31,7 +31,7 @@ class Generator(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.ConvTranspose2d(32, 1, kernel_size=3, stride=1, padding=1),
-            nn.Sigmoid()
+            nn.Tanh()
         )
 
     def forward(self, z):
@@ -61,57 +61,80 @@ class Discriminator(nn.Module):
 def build_and_train_models():
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
+        transforms.Normalize([0.5], [0.5]),
     ])
 
     train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=32, shuffle=True, num_workers=2, pin_memory=True  # Optimized DataLoader
+        train_dataset, batch_size=64, shuffle=True, num_workers=2, pin_memory = False
     )
 
+    batch_size = 64
     latent_size = 100
-    lr = 2e-4
-    decay = 6e-8
-    train_steps = 5000
+    lr = 0.0002
+    epochs = 50
+    train_steps = 50000
 
     # Initialisation des modèles
     generator = Generator(latent_dim=latent_size).to(device)
     discriminator = Discriminator().to(device)
 
     # Optimiseurs
-    optimizer_G = RMSprop(generator.parameters(), lr=lr)
-    optimizer_D = RMSprop(discriminator.parameters(), lr=lr)
+    optimizer_G = Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
+    optimizer_D = Adam(discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
     adversarial_loss = nn.BCELoss()
 
+    valid_label = 0.9
+    fake_label = 0.1
+    data_iter = iter(train_loader)
+
     for step in tqdm(range(train_steps), desc="Training Progress"):
-        for real_imgs, _ in train_loader:
-            batch_size = real_imgs.size(0)
-            real_imgs = real_imgs.to(device)
+        try:
+            real_imgs, _ = next(data_iter)
+        except StopIteration:
+            data_iter = iter(train_loader)
+            real_imgs, _ = next(data_iter)
 
-            valid = torch.full((batch_size, 1), 0.9, device=device, requires_grad=False)
-            fake = torch.full((batch_size, 1), 0.1, device=device, requires_grad=False)
+        batch_size = real_imgs.size(0)
+        real_imgs = real_imgs.to(device)
 
-            optimizer_G.zero_grad()
-            z = torch.randn(batch_size, latent_size).to(device)
-            gen_imgs = generator(z)
-            g_loss = adversarial_loss(discriminator(gen_imgs), valid)
-            g_loss.backward()
-            optimizer_G.step()
+        valid = torch.full((batch_size, 1), valid_label, device=device)
+        fake = torch.full((batch_size, 1), fake_label, device=device)
 
-            if step % 2 == 0:
-                optimizer_D.zero_grad()
-                real_loss = adversarial_loss(discriminator(real_imgs), valid)
-                fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
-                d_loss = (real_loss + fake_loss) / 2
-                d_loss.backward()
-                optimizer_D.step()
+        #if torch.rand(1).item() < 0.1:
+        #    valid, fake = fake, valid
 
-        if step % 500 == 0:
-            print(f"Step {step}/{train_steps} | D loss: {d_loss.item()} | G loss: {g_loss.item()}")
+        # Entraînement du générateur
+        optimizer_G.zero_grad()
+        z = torch.randn(batch_size, latent_size, device=device)
+        gen_imgs = generator(z)
+        g_loss = adversarial_loss(discriminator(gen_imgs), valid)
+        g_loss.backward()
+        optimizer_G.step()
+
+        # Entraînement du discriminateur (1 fois sur 2 après un certain nombre d'étapes)
+        if step < 10000:
+            optimizer_D.zero_grad()
+            real_loss = adversarial_loss(discriminator(real_imgs), valid)
+            fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
+            d_loss = (real_loss + fake_loss) / 2
+            d_loss.backward()
+            optimizer_D.step()
+
+        elif step % 2 == 0:
+            optimizer_D.zero_grad()
+            real_loss = adversarial_loss(discriminator(real_imgs), valid)
+            fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
+            d_loss = (real_loss + fake_loss) / 2
+            d_loss.backward()
+            optimizer_D.step()
+
+        if step % 5000 == 0:
+            print(f"Step {step}/{train_steps} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_images(generator, step)
 
-    torch.save(generator.state_dict(), 'generator.pth')
-    torch.save(discriminator.state_dict(), 'discriminator.pth')
+    torch.save(generator.state_dict(), 'Results/MNIST/generator.pth')
+    torch.save(discriminator.state_dict(), 'Results/MNIST/discriminator.pth')
 
 
 # Affichage des images générées
@@ -126,7 +149,7 @@ def plot_images(generator, step):
         ax.imshow(img, cmap='gray')
         ax.axis('off')
 
-    plt.savefig(f"generated_{step}.png")
+    plt.savefig(f"generated_MNIST{step}.png")
     plt.close()
 
 

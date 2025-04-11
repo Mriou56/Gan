@@ -6,6 +6,7 @@ import os
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from torchvision.datasets import CelebA
 from tqdm import tqdm
 
 # Vérification du support de MPS
@@ -14,42 +15,47 @@ device = torch.device("mps" if torch.backends.mps.is_available() and torch.backe
 
 # Définition du générateur
 class Generator(nn.Module):
-    def __init__(self, latent_dim=100, img_shape=(3, 32, 32)):
+    def __init__(self, latent_dim=100, img_shape=(3, 64, 64)):
         super(Generator, self).__init__()
         self.img_shape = img_shape
         self.latent_dim = latent_dim
-        self.init_size = img_shape[1] // 4
+        self.init_size = img_shape[1] // 4  # 64 // 4 = 16
         self.fc = nn.Linear(latent_dim, 128 * self.init_size * self.init_size)
 
         self.model = nn.Sequential(
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # 16 -> 32
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),  # 32 -> 64
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.ConvTranspose2d(32, 3, kernel_size=3, stride=1, padding=1),
+            nn.ConvTranspose2d(32, 3, kernel_size=3, stride=1, padding=1),  # 3 canaux (RGB)
             nn.Tanh()
         )
 
     def forward(self, z):
-        x = self.fc(z).view(-1, 128, self.init_size, self.init_size)
+        x = self.fc(z).view(-1, 128, self.init_size, self.init_size)  # (B, 128, 16, 16)
         img = self.model(x)
         return img
 
 class Discriminator(nn.Module):
-    def __init__(self, img_shape=(3, 32, 32)):
+    def __init__(self, img_shape=(3, 64, 64)):
         super(Discriminator, self).__init__()
+        self.img_shape = img_shape
+
         self.model = nn.Sequential(
-            nn.Conv2d(img_shape[0], 64, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1),  # 64x64 -> 32x32
             nn.LeakyReLU(0.2),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),  # 32x32 -> 16x16
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),  # 16x16 -> 8x8
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2),
             nn.Flatten(),
-            nn.Linear(128 * 8 * 8, 1),
+            nn.Linear(256 * 8 * 8, 1),  # car dernière feature map est 8x8
             nn.Sigmoid()
         )
 
@@ -60,20 +66,24 @@ class Discriminator(nn.Module):
 
 def build_and_train_models():
     transform = transforms.Compose([
+        transforms.CenterCrop(178),  # pour couper autour du visage
+        transforms.Resize((64, 64)),  # taille plus adaptée
         transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        transforms.Normalize([0.5] * 3, [0.5] * 3)  # car c’est RGB
     ])
 
-    train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+    celeba_dataset = CelebA(root='./data', split='train', download=True, transform=transform)
+    train_loader = torch.utils.data.DataLoader(celeba_dataset, batch_size=64, shuffle=True)
 
+    batch_size = 64
     latent_size = 100
     lr = 0.0002
+    epochs = 50
     train_steps = 50000
 
     # Initialisation des modèles
-    generator = Generator(latent_dim=latent_size).to(device)
-    discriminator = Discriminator().to(device)
+    generator = Generator(latent_dim=100, img_shape=(3, 64, 64)).to(device)
+    discriminator = Discriminator(img_shape=(3, 64, 64)).to(device)
 
     # Optimiseurs
     optimizer_G = Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
@@ -129,23 +139,24 @@ def build_and_train_models():
             print(f"Step {step}/{train_steps} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_images(generator, step)
 
-    torch.save(generator.state_dict(), 'Results/CIFAR/generator.pth')
-    torch.save(discriminator.state_dict(), 'Results/CIFAR/discriminator.pth')
+    torch.save(generator.state_dict(), 'CelebA/generator.pth')
+    torch.save(discriminator.state_dict(), 'CelebA/discriminator.pth')
 
 
 # Affichage des images générées
 def plot_images(generator, step):
     generator.eval()
     z = torch.randn(16, 100, device=device)
-    gen_imgs = generator(z).cpu().detach().numpy()
+    gen_imgs = generator(z).cpu().detach()
 
     fig, axs = plt.subplots(4, 4, figsize=(4, 4))
     for i, ax in enumerate(axs.flatten()):
-        img = (gen_imgs[i].transpose(1, 2, 0) + 1) / 2
-        ax.imshow(img)
+        img = gen_imgs[i].permute(1, 2, 0).numpy()
+        img = (img * 0.5) + 0.5
+        ax.imshow(img, cmap='gray')
         ax.axis('off')
 
-    plt.savefig(f"generated_CIFAR_{step}.png")
+    plt.savefig(f"CelebA/Images_DCGAN/generated_CelebA{step}.png")
     plt.close()
 
 

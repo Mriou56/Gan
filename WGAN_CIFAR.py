@@ -1,21 +1,19 @@
 import torch
 import torch.nn as nn
-from torch.optim import RMSprop, Adam
+from torch.optim import RMSprop
 from torchvision import datasets, transforms
-import os
-import math
 import matplotlib.pyplot as plt
-import numpy as np
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Vérification du support de MPS
 device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu")
 
+# -------------------- Modèles --------------------
 
-# Définition du générateur
 class Generator(nn.Module):
     def __init__(self, latent_dim=100, img_shape=(3, 32, 32)):
-        super(Generator, self).__init__()
+        super().__init__()
         self.img_shape = img_shape
         self.latent_dim = latent_dim
         self.init_size = img_shape[1] // 4
@@ -36,12 +34,11 @@ class Generator(nn.Module):
 
     def forward(self, z):
         x = self.fc(z).view(-1, 128, self.init_size, self.init_size)
-        img = self.model(x)
-        return img
+        return self.model(x)
 
 class Discriminator(nn.Module):
     def __init__(self, img_shape=(3, 32, 32)):
-        super(Discriminator, self).__init__()
+        super().__init__()
         self.model = nn.Sequential(
             nn.Conv2d(img_shape[0], 64, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(0.2),
@@ -49,17 +46,33 @@ class Discriminator(nn.Module):
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2),
             nn.Flatten(),
-            nn.Linear(128 * 8 * 8, 1),
-            nn.Sigmoid()
+            nn.Linear(128 * 8 * 8, 1)  # Pas de Sigmoid pour WGAN
         )
 
     def forward(self, img):
-        validity = self.model(img)
-        return validity
+        return self.model(img)
 
 
-def build_and_train_models():
+def plot_images(generator, step, latent_dim=100):
+    generator.eval()
+    z = torch.randn(16, latent_dim, device=device)
+    gen_imgs = generator(z).detach().cpu()
+
+    fig, axs = plt.subplots(4, 4, figsize=(4, 4))
+    for i, ax in enumerate(axs.flatten()):
+        img = gen_imgs[i].permute(1, 2, 0)  # CHW -> HWC
+        img = (img + 1) / 2  # [-1, 1] to [0, 1] for display
+        ax.imshow(img.numpy())
+        ax.axis('off')
+
+    plt.tight_layout()
+    plt.savefig(f"wgan_generated_{step}.png")
+    plt.close()
+
+
+def train_wgan():
     transform = transforms.Compose([
+        transforms.Resize(32),
         transforms.ToTensor(),
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
     ])
@@ -76,8 +89,8 @@ def build_and_train_models():
     discriminator = Discriminator().to(device)
 
     # Optimiseurs
-    optimizer_G = Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
-    optimizer_D = Adam(discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
+    optimizer_G = RMSprop(generator.parameters(), lr=5e-5)
+    optimizer_D = RMSprop(discriminator.parameters(), lr=5e-5)
     adversarial_loss = nn.BCELoss()
 
     valid_label = 0.9
@@ -129,36 +142,9 @@ def build_and_train_models():
             print(f"Step {step}/{train_steps} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_images(generator, step)
 
-    torch.save(generator.state_dict(), 'Results/CIFAR/generator.pth')
-    torch.save(discriminator.state_dict(), 'Results/CIFAR/discriminator.pth')
-
-
-# Affichage des images générées
-def plot_images(generator, step):
-    generator.eval()
-    z = torch.randn(16, 100, device=device)
-    gen_imgs = generator(z).cpu().detach().numpy()
-
-    fig, axs = plt.subplots(4, 4, figsize=(4, 4))
-    for i, ax in enumerate(axs.flatten()):
-        img = (gen_imgs[i].transpose(1, 2, 0) + 1) / 2
-        ax.imshow(img)
-        ax.axis('off')
-
-    plt.savefig(f"generated_CIFAR_{step}.png")
-    plt.close()
-
-
-# Fonction de test
-def truc(generator_path):
-    generator = Generator().to(device)
-    generator.load_state_dict(torch.load(generator_path, map_location=device))
-    generator.eval()
-
-    z = torch.randn(16, 100, device=device)
-    plot_images(generator, "test")
+    torch.save(generator.state_dict(), 'Results/CIFAR/wgan_generator.pth')
+    torch.save(discriminator.state_dict(), 'Results/CIFAR/wgan_discriminator.pth')
 
 
 if __name__ == '__main__':
-    build_and_train_models()
-    #test("generator.pth")
+    train_wgan()

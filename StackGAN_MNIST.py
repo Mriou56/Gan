@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
+from keras.src.utils.module_utils import torchvision
 from matplotlib import pyplot as plt
 from torch.optim import Adam
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 import os
@@ -21,6 +23,7 @@ epochs = 30
 lr = 0.0002
 save_dir = "Results/StackGAN"
 os.makedirs(save_dir, exist_ok=True)
+writer = SummaryWriter(log_dir="runs/StackGAN")
 
 
 # Générateur Stage I
@@ -129,7 +132,7 @@ def train_stage_I():
 
     for epoch in range(epochs):
         loop = tqdm(loader, desc=f"Stage I - Epoch {epoch+1}/{epochs}")
-        for imgs, labels in loop:
+        for batch_idx, (imgs, labels) in enumerate(loop):
             imgs, labels = imgs.to(device), labels.to(device)
             valid = torch.ones((imgs.size(0), 1), device=device)
             fake = torch.zeros((imgs.size(0), 1), device=device)
@@ -151,16 +154,37 @@ def train_stage_I():
             d_loss.backward()
             optimizer_D.step()
 
+            writer.add_scalar('Stage1/Discriminator_loss', d_loss.item(), epoch * len(loader) + batch_idx)
+            writer.add_scalar('Stage1/Generator_loss', g_loss.item(), epoch * len(loader) + batch_idx)
+
         if (epoch + 1) % 5 == 0:
             print(f"Step {epoch}/{epochs} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_generated_images(generator, epoch, stage="Stage1")
+
+            with torch.no_grad():
+                test_z = torch.randn(16, latent_dim, device=device)
+                test_labels = torch.randint(0, num_classes, (16,), device=device)  # si conditioning
+                samples = generator(test_z, test_labels).cpu()
+                grid = torchvision.utils.make_grid(samples, normalize=True)
+                writer.add_image('Stage1/Generated_images', grid, epoch)
 
     # Sauvegarde des poids
     torch.save(generator.state_dict(), f"{save_dir}/generator_stage1.pth")
     torch.save(discriminator.state_dict(), f"{save_dir}/discriminator_stage1.pth")
 
 
+
 def train_stage_II(generator_stage1):
+    transform = transforms.Compose([
+        transforms.Resize(image_size),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5], [0.5])
+    ])
+
+    dataset = datasets.MNIST(root="./data", train=True, download=True, transform=transform)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+
     generator_stage2 = GeneratorStage2().to(device)
     discriminator_stage2 = DiscriminatorStage2().to(device)
 
@@ -170,8 +194,8 @@ def train_stage_II(generator_stage1):
 
     for epoch in range(epochs):
         generator_stage1.eval()
-        loop = tqdm(range(100), desc=f"Stage II - Epoch {epoch+1}/{epochs}")
-        for _ in loop:
+        loop = tqdm(range(100), desc=f"Stage II - Epoch {epoch + 1}/{epochs}")
+        for batch_idx in loop:
             labels = torch.randint(0, num_classes, (batch_size,), device=device)
             z = torch.randn(batch_size, latent_dim, device=device)
             with torch.no_grad():
@@ -184,8 +208,8 @@ def train_stage_II(generator_stage1):
 
             # Générateur
             optimizer_G.zero_grad()
-            g_loss = criterion(discriminator_stage2(high_res), valid)
-            g_loss.backward()
+            g2_loss = criterion(discriminator_stage2(high_res), valid)
+            g2_loss.backward()
             optimizer_G.step()
 
             # Discriminateur
@@ -193,12 +217,24 @@ def train_stage_II(generator_stage1):
             real_imgs = nn.functional.interpolate(low_res, size=high_res_size, mode='bilinear', align_corners=False)
             real_loss = criterion(discriminator_stage2(real_imgs), valid)
             fake_loss = criterion(discriminator_stage2(high_res.detach()), fake)
-            d_loss = (real_loss + fake_loss) / 2
-            d_loss.backward()
+            d2_loss = (real_loss + fake_loss) / 2
+            d2_loss.backward()
             optimizer_D.step()
+
+        writer.add_scalar('Stage2/Discriminator_loss', d2_loss.item(), epoch * len(loader) + batch_idx)
+        writer.add_scalar('Stage2/Generator_loss', g2_loss.item(), epoch * len(loader) + batch_idx)
 
         if (epoch + 1) % 5 == 0:
             plot_generated_images(generator_stage2, epoch, stage="Stage2", input_generator=generator_stage1)
+            with torch.no_grad():
+                z_test = torch.randn(10, latent_dim, device=device)
+                labels_test = torch.arange(0, 10, device=device)
+
+                low_res_images = generator_stage1(z_test, labels_test)
+                samples = generator_stage2(low_res_images).cpu()
+
+                grid = torchvision.utils.make_grid(samples, normalize=True)
+                writer.add_image('Stage2/Generated_images', grid, epoch)
 
     torch.save(generator_stage2.state_dict(), f"{save_dir}/generator_stage2.pth")
     torch.save(discriminator_stage2.state_dict(), f"{save_dir}/discriminator_stage2.pth")
@@ -217,7 +253,7 @@ def plot_generated_images(generator, epoch, stage, input_generator=None):
             gen_imgs = generator(z, labels)
 
         img_grid = (gen_imgs + 1) / 2
-        save_image(img_grid, f"{save_dir}/Images/{stage}_MNIST_Epoch{epoch}.png", nrow=5)
+        save_image(img_grid, f"{save_dir}/Images/{stage}_MNIST_Epoch{epoch + 1}.png", nrow=5)
 
         fig, axs = plt.subplots(2, 5, figsize=(10, 4))
         for i, ax in enumerate(axs.flatten()):
@@ -228,7 +264,7 @@ def plot_generated_images(generator, epoch, stage, input_generator=None):
     generator.train()
 
 if __name__ == '__main__':
-    ##train_stage_I()
+    #train_stage_I()
     gen1 = GeneratorStage1().to(device)
     gen1.load_state_dict(torch.load("Results/StackGAN/generator_stage1.pth", map_location=device))
     train_stage_II(gen1)

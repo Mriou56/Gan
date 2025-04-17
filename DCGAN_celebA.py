@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from keras.src.utils.module_utils import torchvision
 from torch.optim import RMSprop, Adam
 from torchvision import datasets, transforms
 import os
@@ -8,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torchvision.datasets import CelebA
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 # Vérification du support de MPS
 device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu")
@@ -75,6 +77,8 @@ def build_and_train_models():
     celeba_dataset = CelebA(root='./data', split='train', download=True, transform=transform)
     train_loader = torch.utils.data.DataLoader(celeba_dataset, batch_size=64, shuffle=True)
 
+    writer = SummaryWriter(log_dir="runs/DCGAN_CelebA")
+
     batch_size = 64
     latent_size = 100
     lr = 0.0002
@@ -93,6 +97,9 @@ def build_and_train_models():
     valid_label = 0.9
     fake_label = 0.1
     data_iter = iter(train_loader)
+
+    # Pour fixer un bruit et observer l'évolution des images
+    fixed_noise = torch.randn(64, latent_size, device=device)
 
     for step in tqdm(range(train_steps), desc="Training Progress"):
         try:
@@ -118,29 +125,34 @@ def build_and_train_models():
         g_loss.backward()
         optimizer_G.step()
 
-        # Entraînement du discriminateur (1 fois sur 2 après un certain nombre d'étapes)
-        if step < 10000:
-            optimizer_D.zero_grad()
-            real_loss = adversarial_loss(discriminator(real_imgs), valid)
-            fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
-            d_loss = (real_loss + fake_loss) / 2
-            d_loss.backward()
-            optimizer_D.step()
 
-        elif step % 2 == 0:
-            optimizer_D.zero_grad()
-            real_loss = adversarial_loss(discriminator(real_imgs), valid)
-            fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
-            d_loss = (real_loss + fake_loss) / 2
-            d_loss.backward()
-            optimizer_D.step()
+        # Entraînement du discriminateur (1 fois sur 2 après un certain nombre d'étapes)
+        optimizer_D.zero_grad()
+        real_loss = adversarial_loss(discriminator(real_imgs), valid)
+        fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
+        d_loss = (real_loss + fake_loss) / 2
+        d_loss.backward()
+        optimizer_D.step()
+        #train_discriminator = step < 10000 or step % 2 == 0
+        #if train_discriminator:
+
+
+        writer.add_scalar('Loss/Generator', g_loss.item(), step)
+        writer.add_scalar('Loss/Discriminator', d_loss.item(), step)
 
         if step % 5000 == 0:
             print(f"Step {step}/{train_steps} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_images(generator, step)
 
+            with torch.no_grad():
+                fake_samples = generator(fixed_noise).detach().cpu()
+            grid = torchvision.utils.make_grid(fake_samples, normalize=True)
+            writer.add_image('Generated Images', grid, step)
+
     torch.save(generator.state_dict(), 'CelebA/generator.pth')
     torch.save(discriminator.state_dict(), 'CelebA/discriminator.pth')
+
+    writer.close()
 
 
 # Affichage des images générées
@@ -156,7 +168,7 @@ def plot_images(generator, step):
         ax.imshow(img, cmap='gray')
         ax.axis('off')
 
-    plt.savefig(f"CelebA/Images_DCGAN/generated_CelebA{step}.png")
+    plt.savefig(f"CelebA/Images_DCGAN/generated_CelebA_2_{step}.png")
     plt.close()
 
 

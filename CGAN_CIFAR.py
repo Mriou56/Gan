@@ -14,7 +14,7 @@ from tqdm import tqdm
 # Vérification du support de MPS
 device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu")
 
-# Les classes :
+# Les classes pour l'affichage :
 CIFAR10_CLASSES = [
     'airplane', 'automobile', 'bird', 'cat', 'deer',
     'dog', 'frog', 'horse', 'ship', 'truck'
@@ -53,7 +53,7 @@ class Generator(nn.Module):
         img = self.model(x)
         return img
 
-# Discriminator
+# Définition du discriminator
 class Discriminator(nn.Module):
     def __init__(self, img_shape=(3, 32, 32), num_classes=10):
         super(Discriminator, self).__init__()
@@ -106,7 +106,7 @@ def build_and_train_models():
     fake_label = 0.1
     data_iter = iter(train_loader)
 
-    # Pour fixer un bruit et observer l'évolution des images
+    # Pour mieux observer l'évolution des images
     fixed_noise = torch.randn(64, latent_size, device=device)
 
     for step in tqdm(range(train_steps), desc="Training Progress"):
@@ -179,7 +179,7 @@ def plot_images(generator, step):
 
 
 # Fonction de test
-def truc(generator_path):
+def test(generator_path):
     generator = Generator().to(device)
     generator.load_state_dict(torch.load(generator_path, map_location=device))
     generator.eval()
@@ -190,4 +190,4 @@ def truc(generator_path):
 
 if __name__ == '__main__':
     build_and_train_models()
-    #truc("Results/MNIST/generator_CGAN.pth")
+    #test("Results/MNIST/generator_CGAN.pth")

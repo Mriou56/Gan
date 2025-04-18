@@ -133,8 +133,8 @@ def build_and_train_models():
             print(f"Step {step}/{train_steps} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_images(generator, step)
 
-    torch.save(generator.state_dict(), 'Results/MNIST/generator.pth')
-    torch.save(discriminator.state_dict(), 'Results/MNIST/discriminator.pth')
+    torch.save(generator.state_dict(), 'Results/MNIST/DCGAN/generator.pth')
+    torch.save(discriminator.state_dict(), 'Results/MNIST/DCGAN/discriminator.pth')
 
 
 # Affichage des images générées
@@ -149,7 +149,7 @@ def plot_images(generator, step):
         ax.imshow(img, cmap='gray')
         ax.axis('off')
 
-    plt.savefig(f"generated_MNIST{step}.png")
+    plt.savefig(f"Results/MNIST/DCGAN/Images/generated_MNIST{step}.png")
     plt.close()
 
 

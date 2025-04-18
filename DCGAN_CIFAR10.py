@@ -150,7 +150,7 @@ def plot_images(generator, step):
 
 
 # Fonction de test
-def truc(generator_path):
+def test(generator_path):
     generator = Generator().to(device)
     generator.load_state_dict(torch.load(generator_path, map_location=device))
     generator.eval()

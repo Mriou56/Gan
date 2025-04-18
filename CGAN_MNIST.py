@@ -11,19 +11,6 @@ from tqdm import tqdm
 # Vérification du support de MPS
 device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu")
 
-import torch
-import torch.nn as nn
-from torch.optim import RMSprop, Adam
-from torchvision import datasets, transforms
-import os
-import math
-import matplotlib.pyplot as plt
-import numpy as np
-from tqdm import tqdm
-
-# Vérification du support de MPS
-device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu")
-
 
 # Définition du générateur
 class Generator(nn.Module):
@@ -145,8 +132,8 @@ def build_and_train_models():
             print(f"Step {step}/{train_steps} | D loss: {d_loss.item():.4f} | G loss: {g_loss.item():.4f}")
             plot_images(generator, step)
 
-    torch.save(generator.state_dict(), 'Results/MNIST/generator_CGAN.pth')
-    torch.save(discriminator.state_dict(), 'Results/MNIST/discriminator_CGAN.pth')
+    torch.save(generator.state_dict(), 'Results/MNIST/CGAN/generator_CGAN.pth')
+    torch.save(discriminator.state_dict(), 'Results/MNIST/CGAN/discriminator_CGAN.pth')
 
 
 # Affichage des images générées
@@ -171,7 +158,7 @@ def plot_images(generator, step):
 
 
 # Fonction de test
-def truc(generator_path):
+def test(generator_path):
     generator = Generator().to(device)
     generator.load_state_dict(torch.load(generator_path, map_location=device))
     generator.eval()
@@ -182,4 +169,4 @@ def truc(generator_path):
 
 if __name__ == '__main__':
     #build_and_train_models()
-    truc("Results/MNIST/generator_CGAN.pth")
+    test("Results/MNIST/CGAN/generator_CGAN.pth")

@@ -149,8 +149,8 @@ def build_and_train_models():
             grid = torchvision.utils.make_grid(fake_samples, normalize=True)
             writer.add_image('Generated Images', grid, step)
 
-    torch.save(generator.state_dict(), 'CelebA/generator.pth')
-    torch.save(discriminator.state_dict(), 'CelebA/discriminator.pth')
+    torch.save(generator.state_dict(), 'Results/CelebA/generator.pth')
+    torch.save(discriminator.state_dict(), 'Results/CelebA/discriminator.pth')
 
     writer.close()
 
@@ -173,7 +173,7 @@ def plot_images(generator, step):
 
 
 # Fonction de test
-def truc(generator_path):
+def test(generator_path):
     generator = Generator().to(device)
     generator.load_state_dict(torch.load(generator_path, map_location=device))
     generator.eval()
